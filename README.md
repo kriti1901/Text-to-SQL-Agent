@@ -1,4 +1,4 @@
-# Northwind Text-to-SQL
+# Text-to-SQL Agent
 
 Ask plain-English questions about the Northwind sample database. The assistant writes a SQLite
 `SELECT`, checks it with guardrails, runs it read-only, and retries with the error message if it fails.
