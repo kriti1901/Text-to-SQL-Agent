@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Northwind Text-to-SQL</title>
+<style>
+  :root {
+    --bg: #fafaf7; --fg: #1d1d1b; --muted: #6b6b66; --card: #ffffff;
+    --border: #e2e0d8; --accent: #2f6fdb; --err: #b3261e; --ok: #1e7a3c;
+    --code-bg: #f3f2ee;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #161614; --fg: #ecebe6; --muted: #9b9a93; --card: #1f1f1c;
+      --border: #3a3a35; --accent: #7aa7ff; --err: #ff8a80; --ok: #7bd39a;
+      --code-bg: #262622;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #161614; --fg: #ecebe6; --muted: #9b9a93; --card: #1f1f1c;
+    --border: #3a3a35; --accent: #7aa7ff; --err: #ff8a80; --ok: #7bd39a;
+    --code-bg: #262622;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+         font: 15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+  main { max-width: 900px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 20px; font-size: 14px; }
+  form { display: flex; gap: 8px; flex-wrap: wrap; }
+  input[type=text] { flex: 1 1 280px; padding: 10px 12px; border-radius: 8px;
+         border: 1px solid var(--border); background: var(--card); color: var(--fg);
+         font: inherit; min-width: 0; }
+  button { padding: 10px 18px; border-radius: 8px; border: 0; background: var(--accent);
+           color: #fff; font: inherit; cursor: pointer; }
+  button:disabled { opacity: .55; cursor: default; }
+  .examples { margin: 12px 0 0; display: flex; gap: 6px; flex-wrap: wrap; }
+  .examples button { background: transparent; color: var(--accent);
+         border: 1px solid var(--border); padding: 5px 10px; font-size: 13px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+          padding: 14px 16px; margin-top: 16px; }
+  .label { font-size: 12px; text-transform: uppercase; letter-spacing: .04em;
+           color: var(--muted); margin-bottom: 6px; }
+  pre { background: var(--code-bg); padding: 10px 12px; border-radius: 8px; overflow-x: auto;
+        margin: 0; font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; }
+  .scroll { overflow-x: auto; max-width: 100%; }
+  table { border-collapse: collapse; font-size: 13px; width: 100%; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border);
+           white-space: nowrap; }
+  th { color: var(--muted); font-weight: 600; }
+  .answer { font-size: 16px; }
+  .err { color: var(--err); }
+  .ok { color: var(--ok); }
+  .trail li { margin: 6px 0; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .note { color: var(--muted); font-size: 12px; margin-top: 16px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Northwind Text-to-SQL</h1>
+  <p class="sub">Ask a question in plain English. Queries run read-only against the Northwind database
+     ({{ table_names|length }} tables).</p>
+
+  <form id="ask-form">
+    <input type="text" id="question" placeholder="e.g. Which 5 customers spent the most?" maxlength="500" required>
+    <button type="submit" id="submit">Ask</button>
+  </form>
+  <div class="examples">
+    <button type="button" data-q="Which 5 customers spent the most in total?">Top customers</button>
+    <button type="button" data-q="How many orders were shipped in 1997?">Orders in 1997</button>
+    <button type="button" data-q="Which products are discontinued?">Discontinued products</button>
+    <button type="button" data-q="Drop the Orders table">Try a write (refused)</button>
+  </div>
+
+  <div id="out"></div>
+</main>
+
+<script>
+(function () {
+  const form = document.getElementById('ask-form');
+  const input = document.getElementById('question');
+  const submit = document.getElementById('submit');
+  const out = document.getElementById('out');
+
+  function el(tag, cls, text) {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined) n.textContent = text;
+    return n;
+  }
+  function card(label) {
+    const c = el('div', 'card');
+    c.appendChild(el('div', 'label', label));
+    return c;
+  }
+
+  function render(data) {
+    out.textContent = '';
+    if (data.error) {
+      out.appendChild(el('div', 'card err', data.error));
+      return;
+    }
+
+    if (data.ok) {
+      const a = card('Answer');
+      a.appendChild(el('div', 'answer', data.answer || 'Query succeeded.'));
+      out.appendChild(a);
+    } else {
+      out.appendChild(el('div', 'card err',
+        'Could not produce a valid query after ' + data.attempts.length + ' attempt(s).'));
+    }
+
+    if (data.sql) {
+      const s = card('SQL' + (data.ok ? '' : ' (last attempt)'));
+      s.appendChild(el('pre', null, data.sql));
+      out.appendChild(s);
+    }
+
+    if (data.ok) {
+      const t = card('Results (' + data.rows.length + ' row' + (data.rows.length === 1 ? '' : 's') +
+        (data.truncated ? ', truncated' : '') + ')');
+      const wrap = el('div', 'scroll');
+      const table = el('table');
+      const thead = el('thead');
+      const hr = el('tr');
+      data.columns.forEach(c => hr.appendChild(el('th', null, c)));
+      thead.appendChild(hr);
+      table.appendChild(thead);
+      const tbody = el('tbody');
+      data.rows.slice(0, 200).forEach(r => {
+        const tr = el('tr');
+        r.forEach(v => tr.appendChild(el('td', null, v === null ? 'NULL' : String(v))));
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody);
+      wrap.appendChild(table);
+      t.appendChild(wrap);
+      out.appendChild(t);
+    }
+
+    if (data.attempts && data.attempts.length) {
+      const trail = card('Attempts');
+      const ul = el('ol', 'trail');
+      data.attempts.forEach(a => {
+        const li = el('li');
+        li.appendChild(el('span', a.error ? 'err' : 'ok',
+          'Attempt ' + a.number + (a.error ? ' failed: ' + a.error : ' succeeded')));
+        ul.appendChild(li);
+      });
+      trail.appendChild(ul);
+      out.appendChild(trail);
+    }
+  }
+
+  async function ask(question) {
+    submit.disabled = true;
+    out.textContent = '';
+    out.appendChild(el('div', 'muted', 'Thinking…'));
+    try {
+      const resp = await fetch('/api/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question }),
+      });
+      const data = await resp.json();
+      if (!resp.ok && !data.error) data.error = 'Request failed (' + resp.status + ').';
+      render(data);
+    } catch (e) {
+      render({ error: 'Network error: ' + e.message });
+    } finally {
+      submit.disabled = false;
+    }
+  }
+
+  form.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = input.value.trim();
+    if (q) ask(q);
+  });
+  document.querySelectorAll('.examples button').forEach(b => {
+    b.addEventListener('click', () => { input.value = b.dataset.q; ask(b.dataset.q); });
+  });
+})();
+</script>
+</body>
+</html>
