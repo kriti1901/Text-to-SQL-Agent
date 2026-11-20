@@ -58,6 +58,16 @@ Build the Titanic database from Kaggle's `train.csv`, which is available from th
 
 The script writes `data/titanic.db`. The CSV file is not included in this repository.
 
+## Authentication
+
+All routes require HTTP Basic Authentication. The server reads the credentials from environment
+variables and refuses to start if either one is missing:
+
+| Variable | Description |
+|---|---|
+| `APP_USERNAME` | Username required to access the application |
+| `APP_PASSWORD` | Password required to access the application |
+
 ## Usage
 
 Start the web server:
@@ -88,6 +98,8 @@ Example questions:
 | `TEXT2SQL_DB` | Path to the SQLite database to query | `data/northwind.db` |
 | `GROQ_API_KEY` | Groq API key; not required where the environment supplies credentials | none |
 | `TEXT2SQL_MODEL` | Groq model used to generate SQL | `openai/gpt-oss-120b` |
+| `APP_USERNAME` | Login username (required) | none |
+| `APP_PASSWORD` | Login password (required) | none |
 | `PORT` | Port for the web server | `5000` |
 
 ## API reference
